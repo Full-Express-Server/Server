@@ -1,0 +1,44 @@
+{
+    "ExamplePages": {
+        "main": [{
+            "fileName": "404.html",
+            "id": "404",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/404.html"
+        },
+        {
+            "fileName": "500.html",
+            "id": "500",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/500.html"
+        },
+        {
+            "fileName": "index.html",
+            "id": "index",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/index.html"
+        },
+        {
+            "fileName": "home.html",
+            "id": "adminPanel",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/adminPanel.html"
+        },
+        {
+            "fileName": "index.js",
+            "id": "subdomainAdmin.js",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/subdomain.js"
+        },
+        {
+            "fileName": "favicon.ico",
+            "id": "favicon",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/favicon.ico"
+        },
+        {
+            "fileName": "users.json",
+            "id": "users",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/users.json"
+        },
+        {
+            "fileName": "controls.js",
+            "id": "serverControls",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/serverControls.js"
+        }]
+    }
+}

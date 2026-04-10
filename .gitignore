@@ -1,0 +1,17 @@
+.vscode
+
+/src
+
+node_modules
+
+package*
+
+test-*
+temp
+bun.loc*
+
+*.exe
+
+._*
+.DS_Store
+*.log
