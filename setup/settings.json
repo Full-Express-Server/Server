@@ -12,33 +12,56 @@
         },
         {
             "fileName": "index.html",
-            "id": "index",
-            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/index.html"
+            "id": "mainHTML",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/mainHTML.html"
         },
         {
-            "fileName": "home.html",
-            "id": "adminPanel",
-            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/adminPanel.html"
+            "fileName": "index.html",
+            "id": "adminHTML",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/adminHTML.html"
         },
         {
             "fileName": "index.js",
-            "id": "subdomainAdmin.js",
-            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/subdomain.js"
+            "id": "index",
+            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/index.js"
         },
         {
             "fileName": "favicon.ico",
             "id": "favicon",
             "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/favicon.ico"
-        },
-        {
-            "fileName": "users.json",
-            "id": "users",
-            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/users.json"
-        },
-        {
-            "fileName": "controls.js",
-            "id": "serverControls",
-            "link": "https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/examplePages/serverControls.js"
         }]
-    }
+    },
+    "config": [{
+            "name": "basePage",
+            "value": "index.html"
+        },
+        {
+            "name": "domain",
+            "value": "localhost"
+        },
+        {
+            "name": "HTTPStatusCode_404",
+            "value": "404.html"
+        },
+        {
+            "name": "HTTPStatusCode_500",
+            "value": "500.html"
+        },
+        {
+            "name": "ip",
+            "value": "127.0.0.1"
+        },
+        {
+            "name": "lockdown",
+            "value": false
+        },
+        {
+            "name": "setPort",
+            "value": null
+        },
+        {
+            "name": "useFaviconRequest",
+            "value": true
+        }
+    ]
 }

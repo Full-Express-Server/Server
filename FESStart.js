@@ -44,9 +44,8 @@ stat(join(__dirname, `src/ExpressServerSettings`, `config.json`), (e) => {
                         stat(join(__dirname, `src/subdomains`), (e) => { if (e) mkdirSync(join(__dirname, `src/subdomains`));});
                         stat(join(__dirname, `src/plugins`), (e) => { if (e) mkdirSync(join(__dirname, `src/plugins`)); writeFileSync(join(__dirname, `src/plugins`, `example.js`), `module.exports = {\n  name: "Example Plugin",\n  description: "This is an example of a plugin.",\n  enabled: true,\n  run: () => {\n    console.log("This log is coming from the plugin example.js! You can replace this code and create your own plugin.");\n  },\n};`);});
                         setTimeout(() => {
-                            writeFileSync(join(__dirname, `src/public_html`, `private.json`), JSON.stringify(["/users.json", "/controls.js"]));
-                            fetch(settingsURL).then(res => res.json()).then(data => { data.ExamplePages.dev.forEach((element, index, array) => { if ([`404`, `500`, `favicon`, `index`, `users`, `serverControls`].includes(element.id)) fetch(element.link).then(res => res.text()).then(data => { writeFileSync(join(__dirname, `src/public_html`, element.fileName), data); }); }); });
-                            createNewSubdomain({ name: "panel", useAdminPage: true, enableServerControls: true, enableUserProfiles: true, skeleton: true}).then(() => { console.log(`Setup is complete`); StartService(); });
+                            fetch(settingsURL).then(res => res.json()).then(data => { data.ExamplePages.main.forEach((element, index, array) => { if ([`404`, `500`, `favicon`, `index`, `subdomainAdmin`].includes(element.id)) fetch(element.link).then(res => res.text()).then(data => { writeFileSync(join(__dirname, `src/public_html`, element.fileName), data); }); }); });
+                            createNewSubdomain({ name: "panel", useAdminPage: true, skeleton: true}).then(() => { console.log(`Setup is complete`); StartService(); }).catch((Error) => {console.error(Error)})
                         }, 3000);
                     }, 2000);
                 }, 1000);
@@ -132,7 +131,7 @@ function StartService() {
     readdirSync(join(__dirname, `src/subdomains`)).forEach( /** @param {String} subdomain Each subdomain found.*/ subdomain => {
         log(`Registered subdomain: ${subdomain}`, { italic: true });
         subdomainList.push(subdomain);
-        Server.use(vhost(`${subdomain}.${ess.domain}`, require(join(__dirname, `src/subdomains/${subdomain}`)).default));
+        Server.use(vhost(`${subdomain}.${ess.domain}`, require(join(__dirname, `src/subdomains/${subdomain}/index.js`))));
     });
 
     //? Listens for any calls to the server.
@@ -253,6 +252,7 @@ function StartService() {
                 } else if (req.path == `/controls`) {
 
                     //TODO: In the future, remove this method of control handling and remove controls on the main domain. (The controls should only be in the panel subdomain)
+                    //TODO: CONTROLS WILL BE REMOVE ENTIRELY AND REPLACED WITH A PLUGIN THAT HANDLES SERVER CONTROLS
 
                     stat(join(__dirname, `src/public_html`, `controls.js`), (error) => {
                         if (error) return responseType[`Error`](403, `Controls Disabled`, `Controls are disabled on this domain.`); //If the controls.js does not exist, it will treat it as it is disabled, which will throw a 403 and act like the user doesn't have permission.
@@ -307,7 +307,6 @@ function StartService() {
         }
     });
 
-    //TODO: This will handle POST requests and will route requests through plugins. Plugins must handle the passed data and handle accordingly.
     FindOpenPort(ess.ip).then(openPort => {
         createServer(Server).listen(openPort)
             .on(`listening`, () => { //? Creates the server and opens it.
@@ -362,8 +361,6 @@ function StartService() {
      *
      * @param { Object } options The options for the subdomain.
      * @param { String } options.name The name for the subdomain.
-     * @param { Boolean } [options.enableUserProfiles] Whether to enable the user profile controls.
-     * @param { Boolean } [options.enableServerControls] Whether to enable the server controls.
      * @param { Boolean } [options.useAdminPage] Whether to load the admin page for the server.
      * @param { Boolean } [options.skeleton] Whether to load the subdomain with a few example pages.
      * @param { Array<String> } [options.blockedFiles] Which files should not be accessible from URLs.
@@ -386,22 +383,32 @@ function StartService() {
      * @returns { Promise<Object> }
      */
 function createNewSubdomain(options) {
-    return new Promise((res, rej) => {
-        if (!options.name) return rej({ status: 400, message: `name is required`});
-        stat(join(__dirname, `src/subdomains`, options.name), (e, stats) => {
-            if (!e) return rej({ status: 409, message: `subdomain already exists.`});
-            else mkdir(join(__dirname, `src/subdomains`, options.name), (e) => {
-                writeFileSync(join(__dirname, `src/subdomains`, options.name, `private.json`), JSON.stringify(["/users.json", "/controls.js", ...(options.blockedFiles || [])]));
+    return new Promise((Resolve, Reject) => {
+        if (!options.name) return Reject({ status: 400, message: `name is required`});
+        stat(join(__dirname, `src/subdomains`, options.name), (Error, Info) => {
+            if (Error.code != `ENOENT`) {
+                console.log(`An Unknown Internal Server Error has accrued while trying to create a new subdomain folder.`);
+                console.error(Error);
+                return Reject({ status: 500, message: `Unknown Internal Server Error`});
+            }
+            if (!Error && Info?.isDirectory()) return Reject({ status: 409, message: `Subdomain already exists`});
+            mkdir(join(__dirname, `src/subdomains`, options.name), (Error) => {
+                if (Error) {
+                    console.log(`An Unknown Internal Server Error has accrued while trying to create a new subdomain folder.`);
+                    console.error(Error);
+                    return Reject({ status: 500, message: `Unknown Internal Server Error`});
+                }
                 fetch(settingsURL).then(res => res.json()).then(data => {
-                    data.ExamplePages.dev.forEach((element, index, array) => {
-                        if (options.useAdminPage && options.skeleton && element.id == `adminPanel`) newFile(element);
-                        else if (options.skeleton && element.id === `index`) newFile(element);
-                        if (element.id == `subdomainAdmin`) newFile(element);
-                        if (options.skeleton && [`404`, `500`, `favicon`].includes(element.id)) newFile(element);
-                        if (options.enableUserProfiles && element.id == `users`) newFile(element);
-                        if (options.enableServerControls && element.id == `serverControls`) newFile(element);
-                        if (index == array.length - 1) setTimeout(() => { res(); }, 3000)
-                    });
+                    let addedFiles = []
+                    for (const Item of data.ExamplePages.main) {
+                        if (!options?.skeleton) break; 
+                        if (options?.useAdminPage && Item.id === `adminPanel`) { addedFiles.push(Item); continue; }
+                        if (options?.useAdminPage && Item.id === `index`) continue;
+                        if ([`404`, `500`, `favicon`, `index`, `subdomainAdmin`].includes(Item.id)) addedFiles.push(Item);    
+                    }
+                    if (!addedFiles?.length) return Resolve();
+                    for (const element of addedFiles) { newFile(element); }
+                    Resolve();
                 });
     
                 /**
@@ -419,7 +426,7 @@ function createNewSubdomain(options) {
 
 function plugins() {
     stat(join(__dirname, `src/plugins`), (e) => {
-        if (e) { mkdirSync(join(__dirname, `src/plugins`)); log(`UPDATED\nThis server now includes plugins!\nPlugins can be used to run code alongside the server\nRead the documentaion on the GitHub Repo to create your own`, { bold: true, type: `success` });}
+        if (e) { mkdirSync(join(__dirname, `src/plugins`)); log(`UPDATED\nThis server now includes plugins!\nPlugins can be used to run code alongside the server\nRead the documentation on the GitHub Repo to create your own`, { bold: true, type: `success` });}
         let plugins = readdirSync(join(__dirname, `src/plugins`), { withFileTypes: true});
         if (!plugins.length) return log(`There are no plugins to load`, { italic: true, type: "info", color: `ff2`});
         plugins.forEach(x => {
