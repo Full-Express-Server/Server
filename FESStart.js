@@ -193,12 +193,12 @@ function StartService() {
                         case 400: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 400 - Bad Request`, description: description ? description : `Common issues are an error in the URL, check your URL and try again`, HTTP_Status: 400}}
                         case 401: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 401 - Unauthorized`, description: description ? description : `The request did not provide authorization information`, HTTP_Status: 401}}
                         case 403: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 403 - Forbidden`, description: description ? description : `You don't have access to this resource.`, HTTP_Status: 403 } };
-                        case 404: return { page: true, payload: { path: join(filePath, ess.errorPage), errorTitle: title ? title : `HTTP Status Code 404 - Not Found`, description: description ? description : `The resource does not exist at this URL`, HTTP_Status: 404 }}
+                        case 404: return { page: true, payload: { path: join(filePath, ess.HTTPStatusCode_404), errorTitle: title ? title : `HTTP Status Code 404 - Not Found`, description: description ? description : `The resource does not exist at this URL`, HTTP_Status: 404 }}
                         case 405: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 405 - Method Not Allowed`, description: description ? description : `The method that was used was not allowed`, HTTP_Status: 405 }}
                         case 418: return { page: false, payload: { path: undefined, errorTitle: `I'm stoopid :P (I'm a Teapot)`, description: `All server requests are ignored due to being in Lockdown`, HTTP_Status: 418 }}
                         case 500:
                             log(`There was an Internal Server Error at ${Date.now()}`, { type: `error` });
-                            return { page: true, payload: { path: join(filePath, ess.internalErrorPage), errorTitle: title ? title : `HTTP Status Code 500 - Internal Server Error`, description: description ? description : `The Server had an unknown internal error`, HTTP_Status: 500 }}
+                            return { page: true, payload: { path: join(filePath, ess.HTTPStatusCode_500), errorTitle: title ? title : `HTTP Status Code 500 - Internal Server Error`, description: description ? description : `The Server had an unknown internal error`, HTTP_Status: 500 }}
                         default: break;
                     };
                 };
@@ -334,23 +334,29 @@ function StartService() {
      * @param { String } ip The IP that you want to check for an open port.
      * @returns { Promise<string>|void}
      */
-    function FindOpenPort(ip) { 
-        let port = (ess.setPort ? ess.setPort : 80);
+    function FindOpenPort(ip) {
         return new Promise((resolve , reject) => {
-            if (ess.setPort && typeof ess.setPort != `number`) return reject(`The port that was set in config.js is not a number, therefore, the server was closed.`);
-            if (ess.setPort && ess.setPort > 65535) return reject(`The port was set in the config.js to ${ess.setPort}, which is out of range, please set it between 0-65535`);
-            loop();
-            function loop() {
-                check(port, ip).then(inUse => {
-                    if (inUse && ess.setPort) reject(`The port was set in config.js, however, the port is unavailable, and therefore the server is closed.`)
-                    if (inUse && !ess.setPort) { port++; loop(); }
-                    else resolve(port);
-                }).catch(Error => {
-                    console.error(Error);
-                    reject(`There was an unexpected error, and therefore, the server was closed.`);
-                });
-            };
-        }); 
+            fetch(`http://127.0.0.1:81/status`).then(res => res.json()).then(data => {
+                if (data.status === 200 && data.type === `FES Proxy`) {
+                    fetch(`http://127.0.0.1:81/assign?domain=${ess.domain}${ess.setPort ? `&port=${ess.setPort}` : ``}`).then(res => res.json()).then(data => {
+                        if (data.status === 200) { resolve(data.port); log(`The server is running behind a proxy server, and the port ${data.port} was assigned to this server through the proxy.`, { type: `success` }); }
+                    }).catch(Error => { log(`The server is running behind a proxy server, but there was an error assigning a port through the proxy. The error is: ${Error}\nThe server will continue to start, but there may be issues with the server being behind the proxy.`, { type: `warning` }); checkPort(); });
+                } else checkPort();
+            }).catch(() => { checkPort(); });
+
+            function checkPort() {
+                let port = (ess.setPort ? ess.setPort : 80);
+                if (ess.setPort && typeof ess.setPort != `number`) return reject(`The port that was set in config.js is not a number, therefore, the server was closed.`);
+                if (ess.setPort && ess.setPort > 65535) return reject(`The port was set in the config.js to ${ess.setPort}, which is out of range, please set it between 0-65535`);
+                loop(); function loop() {
+                    check(port, ip).then(inUse => {
+                        if (inUse && ess.setPort) reject(`The port was set in config.js, however, the port is unavailable, and therefore the server is closed.`)
+                        if (inUse && !ess.setPort) { port++; loop(); }
+                        else resolve(port);
+                    }).catch(Error => { console.error(Error); reject(`There was an unexpected error, and therefore, the server was closed.`); });
+                };
+            }
+        });
     }
 }
 
