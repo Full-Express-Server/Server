@@ -10,10 +10,9 @@ let HoverExplanation  = "Hover to see tooltip";
 /**The **child_process** library*/
 const { exec, spawnSync } = require("child_process");
 /**The **FS** library */
-const { mkdir, mkdirSync, readdirSync, readFileSync, stat, writeFileSync } = require(`fs`);
+const { mkdirSync, readdirSync, readFileSync, stat, writeFileSync, existsSync } = require(`fs`);
 const { clear } = require(`console`);
 const { join } = require("path");
-const { hostname } = require("os");
 const bunPath = process.env.BUN_PATH || 'bun';
 let log
 // Change the "dev" to "main" if you want the most stable version.
@@ -28,31 +27,30 @@ if (checkPackageManager(bunPath)) packageManager = `"${bunPath}" add`;
 else if (checkPackageManager('npm')) packageManager = 'npm install';
 else { console.log('No known package managers are installed, please install Bun or npm.'); process.exit(1); }
 
-//? We start by looking and seeing if the config has been generated.
-stat(join(__dirname, `src/ExpressServerSettings`, `config.json`), (e) => {
-    //? If it hasn't, then we make the files and download all the dependencies.
-    if (e) console.log(`=+=+=+=+=+=+=+=+=+=+=+=+=\n    Welcome to FES!\n=+=+=+=+=+=+=+=+=+=+=+=+=\n\nThis is the server's first start.\nSetting up needed files and downloading dependencies... This may take a moment.`);
-        if (e) exec(`${packageManager} express tcp-port-used vhost cookie-parser flaggedapi`, (e, sto, ste) => {
-            if (e) { console.log(`error: ${e.message}`); return; }
-            stat(join(__dirname, `src`), (e) => { if (e) { mkdir(join(__dirname, `src`), () => {}); } }); //? Creates "./src".
-            setTimeout(() => {
-                log = require(`flaggedapi`).log;
-                stat(join(__dirname,`src/ExpressServerSettings` ), (e) => { if (e) { mkdirSync(join(__dirname, `src/ExpressServerSettings`)); writeFileSync(join(__dirname, `src/ExpressServerSettings`, `config.json`), `{\n "basePage": "index.html",\n "domain": "localhost",\n "errorPage": "404.html",\n "internalErrorPage": "500.html",\n "ip": "127.0.0.1",\n "lockdown": false,\n "setPort": null,\n "useFaviconRequest": true\n}`); } }); //? Creates "./src/ExpressServerSettings/" and the config file for the server.
-                setTimeout(() => {
-                    stat(join(__dirname, `src/public_html`), (e) => { if (e) { mkdirSync(join(__dirname, `src/public_html`)); } }); //? Creates "./src/public_html" folder, where all of your web pages will go for the root domain (example.com).
-                    setTimeout(() => {
-                        stat(join(__dirname, `src/subdomains`), (e) => { if (e) mkdirSync(join(__dirname, `src/subdomains`));});
-                        stat(join(__dirname, `src/plugins`), (e) => { if (e) mkdirSync(join(__dirname, `src/plugins`)); writeFileSync(join(__dirname, `src/plugins`, `example.js`), `module.exports = {\n  name: "Example Plugin",\n  description: "This is an example of a plugin.",\n  enabled: true,\n  run: () => {\n    console.log("This log is coming from the plugin example.js! You can replace this code and create your own plugin.");\n  },\n};`);});
-                        setTimeout(() => {
-                            fetch(settingsURL).then(res => res.json()).then(data => { data.ExamplePages.main.forEach((element, index, array) => { if ([`404`, `500`, `favicon`, `index`, `subdomainAdmin`].includes(element.id)) fetch(element.link).then(res => res.text()).then(data => { writeFileSync(join(__dirname, `src/public_html`, element.fileName), data); }); }); });
-                            createNewSubdomain({ name: "panel", useAdminPage: true, skeleton: true}).then(() => { console.log(`Setup is complete`); StartService(); }).catch((Error) => {console.error(Error)})
-                        }, 3000);
-                    }, 2000);
-                }, 1000);
-            }, 1000);
+(async () => {
+    if (!existsSync(join(__dirname, `src/ExpressServerSettings`, `config.json`))) { //? Creates "./src/ExpressServerSettings/" and the config file for the server.
+        console.log(`=+=+=+=+=+=+=+=+=+=+=+=+=\n    Welcome to FES!\n=+=+=+=+=+=+=+=+=+=+=+=+=\n\nThis is the server's first start.\nSetting up needed files and downloading dependencies... This may take a moment.`);
+        exec(`${packageManager} express tcp-port-used vhost cookie-parser flaggedapi`, async (Error) => {
+            if (Error) { console.error(Error); process.exit(1); };
+            [`ExpressServerSettings`, `plugins`, `public_html`, `subdomains`].forEach(folder => { mkdirSync(join(__dirname, `src/${folder}`), { recursive: true }); });
+            const config_file_fetch = await fetch(settingsURL);
+            const config = await config_file_fetch.json();        
+            const configObject = Object.fromEntries(config.config.map(item => [item.name, item.value]));
+            writeFileSync(join(__dirname, `src/ExpressServerSettings`, `config.json`), JSON.stringify(configObject, null, 4));
+            const plugin_file_fetch = await fetch(`https://raw.githubusercontent.com/Full-Express-Server/Plugins/refs/heads/main/FES.example.js`);
+            const pluginContent = await plugin_file_fetch.text();
+            writeFileSync(join(__dirname, `src/plugins`, `FES.example.js`), pluginContent);
+            await Promise.all(config.ExamplePages.main.map(async (page) => {
+                if ([`404`, `500`, `favicon`, `mainHTML`, `index`].includes(page.id)) {
+                    const res = await fetch(page.link);
+                    const file = await res.text();
+                    writeFileSync(join(__dirname, `src/public_html`, page.fileName), file);
+                }
+            }));
+            createNewSubdomain({ name: "panel", useAdminPage: true, skeleton: true}).then(() => { console.log(`Setup is complete`); StartService(); }).catch(Error => { console.log(Error); process.exit(1); }); //? Creates a example subdomain called "panel" with the admin page and skeleton, then starts the server, if there was an error, it logs the error and closes the server.
         });
-    else StartService(); //? Else if it has been generated, then we just start the server service.
-});
+    } else StartService() //? Else if it has been generated, then we just start the server service.
+})();
 
 /**
  * ### StartService()
@@ -75,7 +73,7 @@ function StartService() {
     /**The **cookieParser** library*/
     const cookieParser = require('cookie-parser');
     let subdomainList = [];;
-    plugins();
+    plugins({ log }, { firstStart: true }); //? Runs the plugins function, which loads all the plugins in the "./src/plugins" folder and runs them on server start.
 
     /**
      * ### Express Server Settings (ess)
@@ -131,7 +129,8 @@ function StartService() {
     readdirSync(join(__dirname, `src/subdomains`)).forEach( /** @param {String} subdomain Each subdomain found.*/ subdomain => {
         log(`Registered subdomain: ${subdomain}`, { italic: true });
         subdomainList.push(subdomain);
-        Server.use(vhost(`${subdomain}.${ess.domain}`, require(join(__dirname, `src/subdomains/${subdomain}/index.js`))));
+        let Import = require(join(__dirname, `src/subdomains/${subdomain}/index.js`)).default
+        Server.use(vhost(`${subdomain}.${ess.domain}`, Import));
     });
 
     //? Listens for any calls to the server.
@@ -382,49 +381,37 @@ function StartService() {
      * ```
      * @returns { Promise<Object> }
      */
-function createNewSubdomain(options) {
-    return new Promise((Resolve, Reject) => {
-        if (!options.name) return Reject({ status: 400, message: `name is required`});
-        stat(join(__dirname, `src/subdomains`, options.name), (Error, Info) => {
-            if (Error.code != `ENOENT`) {
-                console.log(`An Unknown Internal Server Error has accrued while trying to create a new subdomain folder.`);
-                console.error(Error);
-                return Reject({ status: 500, message: `Unknown Internal Server Error`});
-            }
-            if (!Error && Info?.isDirectory()) return Reject({ status: 409, message: `Subdomain already exists`});
-            mkdir(join(__dirname, `src/subdomains`, options.name), (Error) => {
-                if (Error) {
-                    console.log(`An Unknown Internal Server Error has accrued while trying to create a new subdomain folder.`);
-                    console.error(Error);
-                    return Reject({ status: 500, message: `Unknown Internal Server Error`});
-                }
-                fetch(settingsURL).then(res => res.json()).then(data => {
-                    let addedFiles = []
-                    for (const Item of data.ExamplePages.main) {
-                        if (!options?.skeleton) break; 
-                        if (options?.useAdminPage && Item.id === `adminPanel`) { addedFiles.push(Item); continue; }
-                        if (options?.useAdminPage && Item.id === `index`) continue;
-                        if ([`404`, `500`, `favicon`, `index`, `subdomainAdmin`].includes(Item.id)) addedFiles.push(Item);    
-                    }
-                    if (!addedFiles?.length) return Resolve();
-                    for (const element of addedFiles) { newFile(element); }
-                    Resolve();
-                });
-    
-                /**
-                 * ### newFile();
-                 * 
-                 * Makes a new file.
-                 * 
-                 * @param { Object } element The file Object
-                 */
-                function newFile(element) { fetch(element.link).then(res => res.text()).then(data => { writeFileSync(join(__dirname, `src/subdomains`, options.name, element.fileName), data); }); }
-            });
-        });
-    });
+async function createNewSubdomain(options) {
+    if (!options.name) throw { status: 400, message: `name is required` }
+    const subdomainPath = join(__dirname, `src/subdomains`, options.name);
+
+    if (existsSync(subdomainPath)) throw { status: 409, message: `Subdomain already exists` };
+
+    mkdirSync(subdomainPath, { recursive: true });
+
+    const settingsRes = await fetch(settingsURL);
+    const settingsData = await settingsRes.json();
+
+    const addedFiles = [];
+
+    for (const item of settingsData.ExamplePages.main) {
+        if (!options?.skeleton) break;
+        if (options?.useAdminPage && item.id === `adminHTML`) { addedFiles.push(item); continue; }
+        if (options?.useAdminPage && item.id === `mainHTML`) continue;
+        if ([`404`, `500`, `favicon`, `index`].includes(item.id)) { addedFiles.push(item); }
+    }
+
+    await Promise.all(addedFiles.map(async (element) => {
+            const res = await fetch(element.link);
+            const data = await res.text();
+            writeFileSync(join(__dirname, `src/subdomains`, options.name, element.fileName), data);
+        })
+    );
+
+    return { status: 200, message: `Created subdomain successfully` };
 }
 
-function plugins() {
+function plugins(exposed, payload) {
     stat(join(__dirname, `src/plugins`), (e) => {
         if (e) { mkdirSync(join(__dirname, `src/plugins`)); log(`UPDATED\nThis server now includes plugins!\nPlugins can be used to run code alongside the server\nRead the documentation on the GitHub Repo to create your own`, { bold: true, type: `success` });}
         let plugins = readdirSync(join(__dirname, `src/plugins`), { withFileTypes: true});
@@ -432,7 +419,7 @@ function plugins() {
         plugins.forEach(x => {
             if (x.isFile()) {
                 const plugin = require(join(__dirname, `src/plugins`, x.name));
-                if (plugin.enabled) { log(`Loading Plugin: ${plugin.name}`, { italic: true }); plugin.run(); } 
+                if (plugin.enabled) { log(`Loading Plugin: "${plugin.name}" by ${plugin.author} (${plugin.author}.${plugin.name}.js v${plugin.version})`, { italic: true }); plugin.run(exposed, payload); } 
                 else log(`The plugin: ${plugin.name}, is disabled and was not loaded`, { italic: true, type: "info", color: `a00`});
             }
         });
