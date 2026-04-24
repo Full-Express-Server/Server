@@ -14,13 +14,13 @@ const { mkdirSync, readdirSync, readFileSync, stat, writeFileSync, existsSync } 
 const { clear } = require(`console`);
 const { join } = require("path");
 const bunPath = process.env.BUN_PATH || 'bun';
-let log
+let log; //TODO: QOL: Find a way to require FlaggedAPI to where intellisense will work
 // Change the "dev" to "main" if you want the most stable version.
-let settingsURL = `https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/settings.json`;
+let settingsURL = `https://raw.githubusercontent.com/Full-Express-Server/Server/main/setup/settings.json`; //TODO: Future Fix #1: Change where the template files are stored and make it so it fetches from a independent server (an FES Server ofc lol) instead of GitHub (So we don't have to spam GitHub with requests). Also make GitHub a fallback option if the independent server fails.
 
 clear(); //[TheFlagen430297] If you don't know what this is... I can't help you XD JK
 
-let packageManager
+let packageManager;
 function checkPackageManager(manager) { const result = spawnSync(manager, ['--version'], { stdio: 'ignore' }); return result.status === 0; }
 
 if (checkPackageManager(bunPath)) packageManager = `"${bunPath}" add`;
@@ -34,14 +34,18 @@ else { console.log('No known package managers are installed, please install Bun 
             if (Error) { console.error(Error); process.exit(1); };
             [`ExpressServerSettings`, `plugins`, `public_html`, `subdomains`].forEach(folder => { mkdirSync(join(__dirname, `src/${folder}`), { recursive: true }); });
             const config_file_fetch = await fetch(settingsURL);
-            const config = await config_file_fetch.json();        
+            const config = await config_file_fetch.json();
             const configObject = Object.fromEntries(config.config.map(item => [item.name, item.value]));
             writeFileSync(join(__dirname, `src/ExpressServerSettings`, `config.json`), JSON.stringify(configObject, null, 4));
-            const plugin_file_fetch = await fetch(`https://raw.githubusercontent.com/Full-Express-Server/Plugins/refs/heads/main/FES.example.js`);
-            const pluginContent = await plugin_file_fetch.text();
-            writeFileSync(join(__dirname, `src/plugins`, `FES.example.js`), pluginContent);
+            await downloadPlugin(`FES.example`);
+            await downloadPlugin(`FES.database`);
             await Promise.all(config.ExamplePages.main.map(async (page) => {
                 if ([`404`, `500`, `favicon`, `mainHTML`, `index`].includes(page.id)) {
+                    if (page.id === `favicon`) {
+                        const res = await fetch(page.link);
+                        await writeFileSync(join(__dirname, `src/public_html`, page.fileName), Buffer.from(await res.arrayBuffer()));
+                        return;
+                    }
                     const res = await fetch(page.link);
                     const file = await res.text();
                     writeFileSync(join(__dirname, `src/public_html`, page.fileName), file);
@@ -49,7 +53,7 @@ else { console.log('No known package managers are installed, please install Bun 
             }));
             createNewSubdomain({ name: "panel", useAdminPage: true, skeleton: true}).then(() => { console.log(`Setup is complete`); StartService(); }).catch(Error => { console.log(Error); process.exit(1); }); //? Creates a example subdomain called "panel" with the admin page and skeleton, then starts the server, if there was an error, it logs the error and closes the server.
         });
-    } else StartService() //? Else if it has been generated, then we just start the server service.
+    } else StartService() ;//? Else if it has been generated, then we just start the server service.
 })();
 
 /**
@@ -72,8 +76,8 @@ function StartService() {
     const vhost = require(`vhost`);
     /**The **cookieParser** library*/
     const cookieParser = require('cookie-parser');
-    let subdomainList = [];;
-    plugins({ log }, { firstStart: true }); //? Runs the plugins function, which loads all the plugins in the "./src/plugins" folder and runs them on server start.
+    let subdomainList = [];
+    loadAllPlugins({ log, callPlugin }, { firstStart: true }); //? Runs the plugins function, which loads all the plugins in the "./src/plugins" folder and runs them on server start.
 
     /**
      * ### Express Server Settings (ess)
@@ -129,12 +133,13 @@ function StartService() {
     readdirSync(join(__dirname, `src/subdomains`)).forEach( /** @param {String} subdomain Each subdomain found.*/ subdomain => {
         log(`Registered subdomain: ${subdomain}`, { italic: true });
         subdomainList.push(subdomain);
-        let Import = require(join(__dirname, `src/subdomains/${subdomain}/index.js`)).default
+        let Import = require(join(__dirname, `src/subdomains/${subdomain}/index.js`)).default;
         Server.use(vhost(`${subdomain}.${ess.domain}`, Import));
     });
+    
+    Server.use((err, req, res, next) => { if (err instanceof SyntaxError && err.status === 400 && 'body' in err) return res.status(400).json({ errorTitle: "Invalid JSON body sent to the server", description: err.message, HTTP_Status: 400 }); });
 
-    //? Listens for any calls to the server.
-    Server.use((req, res) => {
+    Server.use((req, res) => { //? Listens for any calls to the server.
         ess = JSON.parse(readFileSync(join(__dirname, `src/ExpressServerSettings`, `config.json`)));
 
         /**
@@ -157,16 +162,22 @@ function StartService() {
              * @returns { void }
              */
             Error: (HTTP_StatusCode, errorTitle, description) => {
-                let HTTP_Status = HTTP_StatusType(errorTitle, description);
-                if (HTTP_Status.page && !errorTitle) stat(HTTP_Status.payload.path, (err, status) => {
-                    if (err) {
-                        if(!status.isFile()) {
-                            log(`The page for Status Code ${HTTP_Status.payload.HTTP_Status} could not be found. Make sure it exist at the path in the config.\nThis could also be coming from one of the subdomains.`, { type: `error` });
-                            return res.status(404).json({ errorTitle: `Missing HTTP Status Code page for HTTP Status Code: ${HTTP_Status.payload.HTTP_Status}`, description: `Wow... The ${HTTP_Status.payload.HTTP_Status} error page couldn't be found. Along with that issue, the origin HTTP Status Code is: ${HTTP_StatusCode}. Description of issue: ${HTTP_Status.payload.description ? HTTP_Status.payload.description : `NO DESCRIPTION PROVIDED`}`, HTTP_Status: 404 } );
-                        } else return res.status(404).sendFile(join(__dirname, `src/public_html`, ess.errorPage));
-                    } else return res.status(HTTP_StatusCode).sendFile(HTTP_Status.payload.path);
-                });
-                else res.status(HTTP_Status.payload.HTTP_Status).json({ errorTitle: HTTP_Status.payload.errorTitle, description: HTTP_Status.payload.description, HTTP_Status: HTTP_Status.payload.HTTP_Status })
+                try {
+                    let HTTP_Status = HTTP_StatusType(errorTitle, description);
+                    if (HTTP_Status.page && !errorTitle) stat(HTTP_Status.payload.path, (err, status) => {
+                        if (err) {
+                            if(!status.isFile()) {
+                                log(`The page for Status Code ${HTTP_Status.payload.HTTP_Status} could not be found. Make sure it exist at the path in the config.\nThis could also be coming from one of the subdomains.`, { type: `error` });
+                                return res.status(404).json({ errorTitle: `Missing HTTP Status Code page for HTTP Status Code: ${HTTP_Status.payload.HTTP_Status}`, description: `Wow... The ${HTTP_Status.payload.HTTP_Status} error page couldn't be found. Along with that issue, the origin HTTP Status Code is: ${HTTP_StatusCode}. Description of issue: ${HTTP_Status.payload.description ? HTTP_Status.payload.description : `NO DESCRIPTION PROVIDED`}`, HTTP_Status: 404 } );
+                            } else return res.status(404).sendFile(join(__dirname, `src/public_html`, ess.errorPage));
+                        } else return res.status(HTTP_StatusCode).sendFile(HTTP_Status.payload.path);
+                    });
+                    else res.status(HTTP_Status.payload.HTTP_Status).json({ errorTitle: HTTP_Status.payload.errorTitle, description: HTTP_Status.payload.description, HTTP_Status: HTTP_Status.payload.HTTP_Status }) ;
+                } catch (error) {
+                    log(`There was an error while trying to generate a Error Response with responseType[]()`, { type: `error`});
+                    console.error(error);
+                    res.status(500).json({ errorTitle: `Unknown Internal Server Error`, description: `There was an Unknown Internal Server Error`, HTTP_Status: 500 });
+                }
 
                 /**
                  * 
@@ -190,18 +201,17 @@ function StartService() {
                 function HTTP_StatusType(title, description) {
                     let filePath = join(__dirname, `src/public_html`);
                     switch (HTTP_StatusCode) {
-                        case 400: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 400 - Bad Request`, description: description ? description : `Common issues are an error in the URL, check your URL and try again`, HTTP_Status: 400}}
-                        case 401: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 401 - Unauthorized`, description: description ? description : `The request did not provide authorization information`, HTTP_Status: 401}}
+                        case 400: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 400 - Bad Request`, description: description ? description : `Common issues are an error in the URL, check your URL and try again`, HTTP_Status: 400}};
+                        case 401: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 401 - Unauthorized`, description: description ? description : `The request did not provide authorization information`, HTTP_Status: 401}};
                         case 403: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 403 - Forbidden`, description: description ? description : `You don't have access to this resource.`, HTTP_Status: 403 } };
-                        case 404: return { page: true, payload: { path: join(filePath, ess.HTTPStatusCode_404), errorTitle: title ? title : `HTTP Status Code 404 - Not Found`, description: description ? description : `The resource does not exist at this URL`, HTTP_Status: 404 }}
-                        case 405: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 405 - Method Not Allowed`, description: description ? description : `The method that was used was not allowed`, HTTP_Status: 405 }}
-                        case 418: return { page: false, payload: { path: undefined, errorTitle: `I'm stoopid :P (I'm a Teapot)`, description: `All server requests are ignored due to being in Lockdown`, HTTP_Status: 418 }}
-                        case 500:
-                            log(`There was an Internal Server Error at ${Date.now()}`, { type: `error` });
-                            return { page: true, payload: { path: join(filePath, ess.HTTPStatusCode_500), errorTitle: title ? title : `HTTP Status Code 500 - Internal Server Error`, description: description ? description : `The Server had an unknown internal error`, HTTP_Status: 500 }}
+                        case 404: return { page: true, payload: { path: join(filePath, ess.HTTPStatusCode_404), errorTitle: title ? title : `HTTP Status Code 404 - Not Found`, description: description ? description : `The resource does not exist at this URL`, HTTP_Status: 404 }};
+                        case 405: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 405 - Method Not Allowed`, description: description ? description : `The method that was used was not allowed`, HTTP_Status: 405 }};
+                        case 409: return { page: false, payload: { path: undefined, errorTitle: title ? title : `HTTP Status Code 409 - Conflict`, description: description ? description : `There was a conflict with the current state of the server/file`, HTTP_Status: 409 }};
+                        case 418: return { page: false, payload: { path: undefined, errorTitle: title ? title : `I'm stoopid :P (I'm a Teapot)`, description: description ? description : `All server requests are ignored due to being in Lockdown`, HTTP_Status: 418 }};
+                        case 500: return { page: true, payload: { path: join(filePath, ess.HTTPStatusCode_500), errorTitle: title ? title : `HTTP Status Code 500 - Internal Server Error`, description: description ? description : `The Server had an unknown internal error`, HTTP_Status: 500 }};
                         default: break;
-                    };
-                };
+                    }
+                }
             },
 
             /**
@@ -233,15 +243,23 @@ function StartService() {
             if (!req.body.payload) return responseType[`Error`](400, `No Payload`, `The request did not include a payload.`);
             const plugins = readdirSync(join(__dirname, `src/plugins`));
             if (plugins.includes(req.body.plugin + `.js`)) {
-                let plugin = require(join(__dirname, `src/plugins`, req.body.plugin + `.js`));
+                let plugin = eval(readFileSync(join(__dirname, `src/plugins`, req.body.plugin + `.js`), `utf-8`));
                 if (!plugin.enabled) return responseType[`Error`](403, `Plugin Disabled`, `The requested plugin is disabled.`);
-                plugin.run(req.body.payload).then(pluginResponse => responseType[`Success`](200, pluginResponse)).catch(Error => responseType[`Error`](500, `Internal Server Error`, `There was an error running the plugin. The error is: ${Error}`));
-            } else return responseType[`Error`](400, `Invalid Plugin`, `The requested plugin is not valid.`);
+                plugin.run({ log, callPlugin, req }, req.body.payload).then(pluginResponse => responseType[`Success`](200, pluginResponse)).catch((Error) => {
+                    if (!Error?.status) {
+                        log(`at ${plugin.author}.${plugin.name}`, { type: `error`});
+                        console.error(Error);
+                    } else responseType[`Error`](Error.status, `HTTP Status ${Error.status} on Plugin: ${req.body.plugin}`, Error.message);
+                });
+            } else return responseType[`Error`](404, `Invalid Plugin`, `The requested plugin is not valid.`);
 
         } else if (req.method == `GET`) {
             stat(join(__dirname, `src/public_html`, `private.json`), (e) => {
+                //TODO: Future Fix #2:  make a check to FES.database to see whether a user can access the private links.
                 if (!e) privateURL = JSON.parse(readFileSync(join(__dirname, `src/public_html`, `private.json`)));
                 if (!e && req.path == privateURL.find((url) => url == req.path)) return responseType[`Error`](403, `URL is Private`, `The URL is private and you don't have access to it`); //? If the file is private and someone tries to access it, it will block the client and throw a 403.
+                
+                //TODO: Future Fix #3: Find a better way to handle the favicon request
                 if (req.path == `/favicon.ico`) { //? Browsers will make a url request for a favicon, so this allows you to decide whether you wish to give a favicon via a url request.
                     //[TheFlagen430297] It is recommended to set your favicon in your HTML code.
                     //[TheFlagen430297] But, you can change this in "./src/ExpressServerSettings/config.json"
@@ -250,8 +268,8 @@ function StartService() {
                     responseType[`Error`](405, `Query Favicon Disabled`, `Querying /favicon.ico is disabled on this server`); //If the favicon request method is disabled, the server will send a 405.
                 } else if (req.path == `/controls`) {
 
-                    //TODO: In the future, remove this method of control handling and remove controls on the main domain. (The controls should only be in the panel subdomain)
-                    //TODO: CONTROLS WILL BE REMOVE ENTIRELY AND REPLACED WITH A PLUGIN THAT HANDLES SERVER CONTROLS
+                    //TODO: Future Removal: Remove this method of control handling and remove controls on the main domain. (The controls should only be in the panel subdomain)
+                    //TODO: Future Removal: CONTROLS WILL BE REMOVE ENTIRELY AND REPLACED WITH A PLUGIN THAT HANDLES SERVER CONTROLS
 
                     stat(join(__dirname, `src/public_html`, `controls.js`), (error) => {
                         if (error) return responseType[`Error`](403, `Controls Disabled`, `Controls are disabled on this domain.`); //If the controls.js does not exist, it will treat it as it is disabled, which will throw a 403 and act like the user doesn't have permission.
@@ -272,19 +290,16 @@ function StartService() {
                                             } else responseType[`Error`](403, `Incorrect oauth`, `oauth param incorrect`);
                                         } else return responseType[`Error`](403, `No Permission`, `You do not have permission to use this`);
                                     } else if (index == array.length - 1) return responseType[`Error`](404, `User Not Found`, `The User does not exist.`);
-                                })
+                                });
                             } else return responseType[`Error`](400, `Command Not Found`, `The type of the action does not exist.`);
-                        })
-                    })
-                } else if (req.path == `/`) {
-                    stat(join(__dirname, `src/public_html`, ess.basePage), (Error) => { //? Checks to see if the basePage exists.
-                        if (Error && Error?.code === `ENOENT`) return responseType[`Error`](404, `Homepage Not Found`, `The homepage for the server could not be found. If you are the client (You most likely are) please try again later. If you are the server admin, make sure that settings are correct and that the file exist.`); //? The file does not exist and throws a 404.
-                        if (Error) return ( responseType[`Error`](500, `Internal Server Error`, `There was an unknown internal server error`), console.log(Error) );
-                        responseType[`Success`](200, join(__dirname, `src/public_html`, ess.basePage));
+                        });
                     });
+                } else if (req.path == `/`) {
+                    if (existsSync(join(__dirname, `src/public_html`, ess.basePage))) return responseType[`Success`](200, join(__dirname, `src/public_html`, ess.basePage)); //? Checks to see if the basePage exists.
+                    responseType[`Error`](404, `Homepage Not Found`, `The homepage for the server could not be found. If you are the client (You most likely are) please try again later. If you are the server admin, make sure that settings are correct and that the file exist.`); //? The file does not exist and throws a 404.
                 } else {
                     let rootPath = join(__dirname, `src/public_html`);
-                    let hasFileExtensionRegex = /(.*)([^\w\s\/])(.*)/
+                    let hasFileExtensionRegex = /(.*)([^\w\s\/])(.*)/;
                     let separator = hasFileExtensionRegex.exec(req.path)?.[2];
 
                     if (separator && separator != `.`) return responseType[`Error`](400, `Incorrect URL Punctuation`, `The file extension separator is (${separator}), which is invalid. You must use (.) or remove the (${separator})`);
@@ -296,7 +311,7 @@ function StartService() {
                             if (separator && !hasFileExtensionRegex.exec(req.path)?.[3]) return responseType[`Error`](400, `Missing File Extension`,  `The URL ended with '.' which is invalid. You need to either provide a file extension or remove the '.'`);
                             if (Error && Error.code === "ENOENT") return responseType[`Error`](404);
                             return ( responseType[`Error`](500), console.log(Error));
-                        };
+                        }
                         responseType[`Success`](200, filePath);
                     });
                 }
@@ -318,7 +333,7 @@ function StartService() {
                 subdomainList.forEach(subdomain => log(`Subdomain: http://${subdomain}.${address}`, { italic: true, color: `0c0`}));
                 if (ess.domain == "localhost") log(`The domain is set to "localhost", you won't be able to use domains if this server is being broadcasted to the internet.\nIn order to use domains, you must edit the domain property to "YourDomain.com" in the config!`, { bold:true, italic:true, type:`warning` });
             })
-            .on(`error`, (Error => { log(`There was an Error starting the server`, { type: `error` } ); console.log(Error); process.exit(1); }))
+            .on(`error`, (Error => { log(`There was an Error starting the server`, { type: `error` } ); console.log(Error); process.exit(1); }));
     }).catch(Error => { log(Error, { type: `error` }); process.exit(1); }); //? If there was an error searching for an open port, it will throw an error.
 
     /**
@@ -350,11 +365,11 @@ function StartService() {
                 if (ess.setPort && ess.setPort > 65535) return reject(`The port was set in the config.js to ${ess.setPort}, which is out of range, please set it between 0-65535`);
                 loop(); function loop() {
                     check(port, ip).then(inUse => {
-                        if (inUse && ess.setPort) reject(`The port was set in config.js, however, the port is unavailable, and therefore the server is closed.`)
+                        if (inUse && ess.setPort) reject(`The port was set in config.js, however, the port is unavailable, and therefore the server is closed.`);
                         if (inUse && !ess.setPort) { port++; loop(); }
                         else resolve(port);
                     }).catch(Error => { console.error(Error); reject(`There was an unexpected error, and therefore, the server was closed.`); });
-                };
+                }
             }
         });
     }
@@ -388,7 +403,7 @@ function StartService() {
      * @returns { Promise<Object> }
      */
 async function createNewSubdomain(options) {
-    if (!options.name) throw { status: 400, message: `name is required` }
+    if (!options.name) throw { status: 400, message: `name is required` };
     const subdomainPath = join(__dirname, `src/subdomains`, options.name);
 
     if (existsSync(subdomainPath)) throw { status: 409, message: `Subdomain already exists` };
@@ -417,19 +432,44 @@ async function createNewSubdomain(options) {
     return { status: 200, message: `Created subdomain successfully` };
 }
 
-function plugins(exposed, payload) {
+async function loadAllPlugins(exposed, payload) {
     stat(join(__dirname, `src/plugins`), (e) => {
         if (e) { mkdirSync(join(__dirname, `src/plugins`)); log(`UPDATED\nThis server now includes plugins!\nPlugins can be used to run code alongside the server\nRead the documentation on the GitHub Repo to create your own`, { bold: true, type: `success` });}
         let plugins = readdirSync(join(__dirname, `src/plugins`), { withFileTypes: true});
         if (!plugins.length) return log(`There are no plugins to load`, { italic: true, type: "info", color: `ff2`});
-        plugins.forEach(x => {
-            if (x.isFile()) {
-                const plugin = require(join(__dirname, `src/plugins`, x.name));
-                if (plugin.enabled) { log(`Loading Plugin: "${plugin.name}" by ${plugin.author} (${plugin.author}.${plugin.name}.js v${plugin.version})`, { italic: true }); plugin.run(exposed, payload); } 
+        plugins.forEach(pluginFile => {
+            if (pluginFile.isFile()) {
+                const plugin = require(join(__dirname, `src/plugins`, pluginFile.name));
+                if (plugin.enabled) { log(`Loading Plugin: "${plugin.name}" by ${plugin.author} (${plugin.author}.${plugin.name}.js v${plugin.version})`, { italic: true }); plugin.run(exposed, payload).then(() => {}).catch(Error => log(`There was an error starting the plugin: ${plugin.name}. The error is: ${Error}`, { type: `error` })); } 
                 else log(`The plugin: ${plugin.name}, is disabled and was not loaded`, { italic: true, type: "info", color: `a00`});
             }
         });
     });
-};
+}
 
-module.exports = { createNewSubdomain };
+async function callPlugin(name, exposed, payload) {
+    try {
+        if (!name) throw { status: 400, message: `Plugin name is required` };
+        const pluginPath = join(__dirname, `src/plugins`, name + `.js`);
+        if (!existsSync(pluginPath)) throw { status: 404, message: `Plugin not found` };
+        const plugin = require(pluginPath);
+        if (!plugin.enabled) throw { status: 403, message: `Plugin is disabled` };
+        let result = await plugin.run(exposed, payload).then(response => response).catch(Error => { throw { status: 500, message: `There was an error running the plugin. The error is: ${Error}` } ;});
+        return result;
+    } catch (error) {
+        log(`Error calling plugin: ${error.message}`, { type: `error` });
+    }
+}
+
+async function downloadPlugin(plugin) {
+    const plugin_file_fetch = await fetch(`https://raw.githubusercontent.com/Full-Express-Server/Plugins/refs/heads/main/${plugin}.js`);
+    const pluginContent = await plugin_file_fetch.text();
+    let pluginData = eval(pluginContent);
+    pluginData.dependencies.forEach(Dependency => {
+        console.log(`Plugin ${plugin} downloaded a dependency: ${Dependency}`);
+        downloadPlugin(Dependency);
+    });
+    writeFileSync(join(__dirname, `src/plugins`, `${plugin}.js`), pluginContent);
+}
+
+module.exports = { createNewSubdomain, downloadPlugin, callPlugin };

@@ -7,7 +7,7 @@ express.use(require('cookie-parser')());
 express.use((req, res) => {
     let ess = require(`../../ExpressServerSettings/config.json`);
     if (ess.lockdown) { res.status(418).json({ errorTitle: `I'm stoopid :P (I'm a teapot)`, message: `All server requests are ignored due to being in Lockdown`, status: 418 }); log(`A request was stopped due to being in Lockdown, time: ${Date.now()}`, { type: `Warning` }); return;}
-    const { path, query } = req
+    const { path, query } = req;
     stat(join(__dirname, `private.json`), (e) => {
         if (!e) privateURL = JSON.parse(readFileSync(join(__dirname, `private.json`)));
         if (!e && path == privateURL.find((url) => url == path)) return res.status(403).send({status: 403, message: `link private.`});
@@ -18,9 +18,10 @@ express.use((req, res) => {
             if (ess.useFaviconRequest) return stat(join(__dirname, `favicon.ico`), (e) => e ? res.status(404).send({ status: 404, message: `Ohh okay, odd... The favicon.ico couldn't be found.`}) : res.status(200).sendFile(join(__dirname, `favicon.ico`)));
             res.status(405).send({ status: 405, message: `Querying /favicon.ico is disabled on this server`});
         } else if (path == `/controls`) {
+            //TODO: Future Removal: CONTROLS WILL BE REMOVE ENTIRELY AND REPLACED WITH A PLUGIN THAT HANDLES SERVER CONTROLS
             stat(join(__dirname, `controls.js`), (e) => {
                 if (e) return res.status(404).send({ status: 404, message: `controls are disabled on this subdomain.`});
-                if (Object.keys(query).length == 0) return res.status(400).send({ status: 400, message: `...` })
+                if (Object.keys(query).length == 0) return res.status(400).send({ status: 400, message: `...` });
                 let { kill } = require(join(__dirname, `controls.js`));
                 stat(join(__dirname, `users.json`), (e) => {
                     if (e) return res.status(404).send({ status: 404, message: `users not found.`});
@@ -32,15 +33,15 @@ express.use((req, res) => {
                             if (query.user == user.name) {
                                 if ([`kill`, `administrator`].find(x => user.permissions.includes(x))) {
                                     if (query.oauth === `2546`) {
-                                        res.status(200).send({ status: 200, message: `The server shut down.` })
+                                        res.status(200).send({ status: 200, message: `The server shut down.` });
                                         kill(Object.keys(query).length > 0 ? (query.code ? query.code : 0) : 0);
                                     } else res.status(403).send({ status: 403, message: `oauth param incorrect` });
-                                } else return res.status(403).send({ status: 403, message: `no permission` })
+                                } else return res.status(403).send({ status: 403, message: `no permission` });
                             } else if (index == array.length - 1) return res.status(404).send({ status: 404, message: `user not found` });
-                        })
+                        });
                     } else return res.status(400).send({ status: 400, message: `The type of the action does not exist.` });
-                })
-            })
+                });
+            });
         } else stat(join(__dirname, path), (e) => { //? Checks to see if the files exist for the request
             //TODO: Use "e" to see why it errored, and respond more correctly.
             if (path == "/") { //? If there are no params on the request, then treats it differently.
@@ -54,9 +55,9 @@ express.use((req, res) => {
                 stat(join(__dirname, path), (e) => {
                     if (e) stat(join(__dirname, path + ".html"), (e) => {
                         if (e) return error(404); //? If the file does not exist, then throw error
-                        res.status(200).sendFile(join(__dirname, path + ".html"))
-                    })
-                })
+                        res.status(200).sendFile(join(__dirname, path + ".html"));
+                    });
+                });
             }
         });
     });
@@ -91,4 +92,4 @@ express.use((req, res) => {
     }
 });
 
-exports.default = express
+exports.default = express;
