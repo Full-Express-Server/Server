@@ -21,7 +21,7 @@ let settingsURL = `https://raw.githubusercontent.com/Full-Express-Server/Server/
 clear(); //[TheFlagen430297] If you don't know what this is... I can't help you XD JK
 
 let packageManager;
-function checkPackageManager(manager) { const result = spawnSync(manager, ['--version'], { stdio: 'ignore' }); return result.status === 0; }
+function checkPackageManager(manager) { const result = spawnSync(manager, ['--version'], { shell: true, stdio: 'ignore' }); return result.status === 0; }
 
 if (checkPackageManager(bunPath)) packageManager = `"${bunPath}" add`;
 else if (checkPackageManager('npm')) packageManager = 'npm install';
@@ -31,7 +31,7 @@ else { console.log('No known package managers are installed, please install Bun 
     if (!existsSync(join(__dirname, `src/ExpressServerSettings`, `config.json`))) { //? Creates "./src/ExpressServerSettings/" and the config file for the server.
         console.log(`=+=+=+=+=+=+=+=+=+=+=+=+=\n    Welcome to FES!\n=+=+=+=+=+=+=+=+=+=+=+=+=\n\nThis is the server's first start.\nSetting up needed files and downloading dependencies... This may take a moment.`);
         exec(`${packageManager} express tcp-port-used vhost cookie-parser flaggedapi`, async (Error) => {
-            if (Error) { console.error(Error); process.exit(1); };
+            if (Error) { console.error(Error); process.exit(1); }
             [`ExpressServerSettings`, `plugins`, `public_html`, `subdomains`].forEach(folder => { mkdirSync(join(__dirname, `src/${folder}`), { recursive: true }); });
             const config_file_fetch = await fetch(settingsURL);
             const config = await config_file_fetch.json();
@@ -465,9 +465,9 @@ async function downloadPlugin(plugin) {
     const plugin_file_fetch = await fetch(`https://raw.githubusercontent.com/Full-Express-Server/Plugins/refs/heads/main/${plugin}.js`);
     const pluginContent = await plugin_file_fetch.text();
     let pluginData = eval(pluginContent);
-    pluginData.dependencies.forEach(Dependency => {
+    pluginData.dependencies.forEach(async Dependency => {
         console.log(`Plugin ${plugin} downloaded a dependency: ${Dependency}`);
-        downloadPlugin(Dependency);
+        await downloadPlugin(Dependency);
     });
     writeFileSync(join(__dirname, `src/plugins`, `${plugin}.js`), pluginContent);
 }
