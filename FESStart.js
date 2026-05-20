@@ -230,12 +230,12 @@ function StartService() {
         };
 
         if (ess.lockdown) { responseType[`Error`](418); log(`A request was stopped due to being in Lockdown, time: ${Date.now()}`, { type: `Warning` }); return; } //! If lockdown is true then it will throw out all requests to the server.
-        if (req.hostname != ess.domain) return responseType[`Error`](403, `Mismatch Domains`, `The supplied domain (${req.hostname}) did not match the set domain in this server. This could be due to: Trying to directly connect to the server's IP and not it's set up domain, A domain that connects to the IP address of the server but is not the set domain.`); //! If the hostname does not match the domain set, it is stopped.
-        
+        if (/(?:[a-z0-9]*)\.((?:[a-z0-9]*)\.(?:.*))|((?:[a-z0-9]*)\.(?:.*))/gm.exec(req.hostname)[1] != ess.domain) return responseType[`Error`](403, `Mismatch Domains`, `The supplied domain (${req.hostname}) did not match the set domain in this server. This could be due to: Trying to directly connect to the server's IP and not it's set up domain, A domain that connects to the IP address of the server but is not the set domain.`); //! If the hostname does not match the domain set, it is stopped.
+
         let subdomainCheck = /([a-z0-9]*)(?:\.)([a-z0-9]*)(?:\.*)(.*)/.exec(req.hostname);
 
         if (req.hostname === `localhost` && (subdomainCheck && !subdomainList.includes(subdomainCheck[1]))) return responseType[`Error`](404, `Error With Subdomain`, `The subdomain (${subdomainCheck[1]}) does not exist on this server. This could be due to: A Typing error (check your spelling), The subdomain does not exist at all, The Subdomain was not loaded or was created outside of startup. (Creating the files in the backend)`);
-        if (subdomainCheck?.[3] && !subdomainCheck(subdomainCheck[1])) return responseType[`Error`](404, `Error With Subdomain`, `The subdomain (${subdomainCheck[1]}) does not exist on this server. This could be due to: A Typing error (check your spelling), The subdomain does not exist at all, The Subdomain was not loaded or was created outside of startup. (Creating the files in the backend)`); //? Checks if the subdomain exists, if not, returns 404.
+        if (subdomainCheck?.[2] && !subdomainList.includes(subdomainCheck[1])) return responseType[`Error`](404, `Error With Subdomain`, `The subdomain (${subdomainCheck[1]}) does not exist on this server. This could be due to: A Typing error (check your spelling), The subdomain does not exist at all, The Subdomain was not loaded or was created outside of startup. (Creating the files in the backend)`); //? Checks if the subdomain exists, if not, returns 404.
 
         if (req.method == `POST`) {
             if (!req.body) return responseType[`Error`](400, `No Body`, `The request did not include a body.`);
