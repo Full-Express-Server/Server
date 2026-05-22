@@ -1,7 +1,7 @@
 const Express = require("express");
 const Server = Express();
 const { stat, readFileSync, fstat, existsSync } = require(`fs`);
-const { log } = require(`console`);
+const { log } = require(`flaggedapi`);
 const { join } = require(`path`);
 Server.use(require('cookie-parser')());
 Server.use(Express.json());
@@ -37,7 +37,7 @@ Server.use((req, res) => {
                 let HTTP_Status = HTTP_StatusType(errorTitle, description);
                 if (HTTP_Status.page && !errorTitle) stat(HTTP_Status.payload.path, (err, status) => {
                     if (err) {
-                        if(!status.isFile()) {
+                        if(!status?.isFile()) {
                             log(`The page for Status Code ${HTTP_Status.payload.HTTP_Status} could not be found. Make sure it exist at the path in the config.\nThis could also be coming from one of the subdomains.`, { type: `error` });
                             return res.status(404).json({ errorTitle: `Missing HTTP Status Code page for HTTP Status Code: ${HTTP_Status.payload.HTTP_Status}`, description: `Wow... The ${HTTP_Status.payload.HTTP_Status} error page couldn't be found. Along with that issue, the origin HTTP Status Code is: ${HTTP_StatusCode}. Description of issue: ${HTTP_Status.payload.description ? HTTP_Status.payload.description : `NO DESCRIPTION PROVIDED`}`, HTTP_Status: 404 } );
                         } else return res.status(404).sendFile(join(__dirname, ess.errorPage));
