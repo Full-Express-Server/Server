@@ -7,6 +7,8 @@
  */
 let HoverExplanation  = "Hover to see tooltip";
 
+/** The **os** library */
+const os = require("os");
 /**The **child_process** library*/
 const { exec, spawnSync } = require("child_process");
 /**The **FS** library */
@@ -323,9 +325,10 @@ function StartService() {
         }
     });
 
-    FindOpenPort(ess.ip).then(openPort => {
+    FindOpenPort(ess.ip ? ess.ip : getMachineIP()).then(openPort => {
         createServer(Server).listen(openPort)
             .on(`listening`, () => { //? Creates the server and opens it.
+                log(`IP Settings\nMachine's IP Address: ${getMachineIP()}\nSet IP Address: ${ess.ip || "Not Set | Using Machine's IP"}`, { italic: true, type: `info` });
                 if (ess.lockdown) log(`The server is in lockdown!\nAll requests are ignored and status 418 is sent back.\nThis can only be changed in the config.json!`, { bold: true, type: `error`, color: `f00`});
                 
                 /**The address of the server */
@@ -353,9 +356,9 @@ function StartService() {
      */
     function FindOpenPort(ip) {
         return new Promise((resolve , reject) => {
-            fetch(`http://127.0.0.1:81/status`).then(res => res.json()).then(data => {
+            fetch(`http://${ess.proxy_ip}/status`).then(res => res.json()).then(data => {
                 if (data.status === 200 && data.type === `FES Proxy`) {
-                    fetch(`http://127.0.0.1:81/assign?domain=${ess.domain}${ess.setPort ? `&port=${ess.setPort}` : ``}`).then(res => res.json()).then(data => {
+                    fetch(`http://${ess.proxy_ip}/assign?domain=${ess.domain}${ess.setPort ? `&port=${ess.setPort}` : ``}&serverInternalIP=${getMachineIP()}`).then(res => res.json()).then(data => {
                         if (data.status === 200) { resolve(data.port); log(`The server is running behind a proxy server, and the port ${data.port} was assigned to this server through the proxy.`, { type: `success` }); }
                     }).catch(Error => { log(`The server is running behind a proxy server, but there was an error assigning a port through the proxy. The error is: ${Error}\nThe server will continue to start, but there may be issues with the server being behind the proxy.`, { type: `warning` }); checkPort(); });
                 } else checkPort();
@@ -472,6 +475,18 @@ async function downloadPlugin(plugin) {
         await downloadPlugin(Dependency);
     });
     writeFileSync(join(__dirname, `src/plugins`, `${plugin}.js`), pluginContent);
+}
+
+function getMachineIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === "IPv4" && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return "127.0.0.1";
 }
 
 module.exports = { createNewSubdomain, downloadPlugin, callPlugin };
